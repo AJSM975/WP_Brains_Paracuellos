@@ -212,6 +212,7 @@
     </div>
     <span class="no-data-flag" id="noDataFlag">Sin trayectos registrados para esta semana</span>
     <span class="status-flag" id="statusFlag"></span>
+    <span class="status-flag current" id="syncFlag" style="display:none;">☁️ Sincronizado</span>
     <button id="toggleAddWeek" class="add-week-btn">➕ Añadir semana futura</button>
   </div>
 
@@ -256,8 +257,36 @@ const CONDUCTORES = ["Sonia","María José","José Luis","Mónica","Norberto","V
 const UBICACIONES = ["Brains","Ciudad Escolar","San Fernando"];
 const DEPORTISTAS = ["Dani","Jorge","Alvaro","Javi","Anibal","Santi"];
 
-const STORAGE_KEY = "wp_planner_assignments_v1";
-const EXTRA_WEEKS_KEY = "wp_extra_weeks_v1";
+// ============ GOOGLE SHEETS (vía Google Apps Script) ============
+// 1) Crea una Google Sheet, ve a Extensiones -> Apps Script.
+// 2) Pega el código que te di en "AppsScript_CodigoGS.txt".
+// 3) Implementa como "Aplicación web", acceso "Cualquier usuario".
+// 4) Pega aquí la URL que termina en ".../exec":
+const SHEETS_API_URL = "https://script.google.com/macros/s/AKfycbyZ7oGwS0zwuczpv6B60Xk72gG4-FPgke1itQvOuOnUtRQimtKHpDA55r6r4Ud-2_KGGw/exec
+";
+
+// Cada cuántos segundos comprobamos si alguien más ha hecho cambios.
+// (Google Sheets no avisa en tiempo real como Firebase, así que "preguntamos"
+// cada pocos segundos. Súbelo si notas que va lento o da errores de cuota.)
+const POLL_INTERVAL_MS = 6000;
+
+async function fetchSharedData(){
+  const res = await fetch(SHEETS_API_URL, { cache: "no-store" });
+  if(!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
+}
+
+async function pushSharedData(partial){
+  // Content-Type "text/plain" evita que el navegador dispare una petición
+  // OPTIONS de pre-vuelo (CORS) que Apps Script no sabe responder.
+  await fetch(SHEETS_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(partial)
+  });
+}
+// ===================================
+
 const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
 const DIAS_TEMPLATE = ["Lunes","Martes","Miércoles","Jueves","Viernes"];
 
@@ -290,11 +319,16 @@ function isoWeekValueToMonday(isoValue){
   return new Date(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate());
 }
 
+// Cache local en memoria; la fuente de verdad vive en la Google Sheet.
+let extraWeeksCache = [];
+
 function loadExtraWeeks(){
-  try{ return JSON.parse(localStorage.getItem(EXTRA_WEEKS_KEY)) || []; }catch(e){ return []; }
+  return extraWeeksCache;
 }
 function saveExtraWeeks(list){
-  localStorage.setItem(EXTRA_WEEKS_KEY, JSON.stringify(list));
+  extraWeeksCache = list;
+  pushSharedData({ extraWeeks: list })
+    .catch(err => console.error("Error guardando semanas extra en Google Sheets:", err));
 }
 
 function locClass(loc){
@@ -314,13 +348,22 @@ function dateToISOWeekValue(d){
 }
 function parseISODate(s){ const [y,m,d] = s.split("-").map(Number); return new Date(y, m-1, d); }
 
-function loadAssignments(){
-  try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }catch(e){ return {}; }
-}
+let assignments = {};
+
 function saveAssignments(data){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  pushSharedData({ assignments: data })
+    .then(showSyncFlag)
+    .catch(err => console.error("Error guardando trayectos en Google Sheets:", err));
 }
-let assignments = loadAssignments();
+
+function showSyncFlag(){
+  const el = document.getElementById("syncFlag");
+  if(!el) return;
+  el.style.display = "inline-block";
+  el.textContent = "☁️ Sincronizado";
+  clearTimeout(window._syncFlagTimeout);
+  window._syncFlagTimeout = setTimeout(()=> el.style.display = "none", 1800);
+}
 
 function keyFor(weekLabel, day){ return weekLabel + "::" + day; }
 
@@ -550,8 +593,10 @@ document.getElementById("weekPicker").addEventListener("change", (e)=>{
 });
 
 function loadAllWeeks(){
-  const extra = loadExtraWeeks();
-  extra.forEach(w => {
+  // Reconstruye WEEKS partiendo solo de la semana base + las semanas extra
+  // guardadas en Google Sheets (evita duplicados si se llama varias veces).
+  WEEKS.length = 1;
+  extraWeeksCache.forEach(w => {
     if(!WEEKS.find(x => x.start === w.start)) WEEKS.push(w);
   });
   WEEKS.sort((a,b) => a.start.localeCompare(b.start));
@@ -594,10 +639,52 @@ document.getElementById("createWeekBtn").addEventListener("click", ()=>{
   goToWeek(isoValue);
 });
 
-function init(){
+let sheetsReady = false;
+let lastRawSnapshot = "";
+
+function applyRemoteData(data){
+  data = data || {};
+  assignments = data.assignments || {};
+  extraWeeksCache = data.extraWeeks || [];
   loadAllWeeks();
-  const initialISO = dateToISOWeekValue(parseISODate(WEEKS[0].start));
-  goToWeek(initialISO);
+}
+
+async function pollSharedData(isFirstLoad){
+  try{
+    const data = await fetchSharedData();
+    const raw = JSON.stringify(data);
+    if(raw === lastRawSnapshot && !isFirstLoad) return; // nada ha cambiado, no re-renderizamos
+    lastRawSnapshot = raw;
+
+    applyRemoteData(data);
+
+    if(isFirstLoad){
+      const initialISO = dateToISOWeekValue(parseISODate(WEEKS[0].start));
+      goToWeek(initialISO);
+      sheetsReady = true;
+    } else {
+      // Cambios hechos por otra persona: refrescamos la semana que se está viendo.
+      if(currentWeekIndex !== -1){
+        const isoActual = dateToISOWeekValue(parseISODate(WEEKS[currentWeekIndex].start));
+        currentWeekIndex = findWeekIndexByISO(isoActual);
+      }
+      renderDays();
+    }
+  }catch(err){
+    console.error("Error conectando con Google Sheets:", err);
+    if(isFirstLoad){
+      document.getElementById("daysGrid").innerHTML =
+        `<div class="empty-msg">⚠️ No se pudo conectar con Google Sheets.<br>Revisa SHEETS_API_URL y que la implementación sea "Cualquier usuario".</div>`;
+    }
+  }
+}
+
+function init(){
+  document.getElementById("daysGrid").innerHTML =
+    `<div class="empty-msg">Cargando datos compartidos desde Google Sheets…</div>`;
+
+  pollSharedData(true);
+  setInterval(() => { if(sheetsReady) pollSharedData(false); }, POLL_INTERVAL_MS);
 }
 init();
 </script>
