@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trayectos Equipo Waterpolo</title>
+<style>
+  :root{
+    --azul-profundo:#003f5c;
+    --azul-medio:#2c7da0;
+    --azul-claro:#61a5c2;
+    --aqua:#89c2d9;
+    --aqua-pastel:#d9f2f5;
+    --coral:#ff6b6b;
+    --amarillo:#ffd166;
+    --texto:#0b2b3c;
+    --blanco:#ffffff;
+    --sombra: 0 8px 24px rgba(0,63,92,0.15);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:'Segoe UI', Roboto, Arial, sans-serif;
+    background: linear-gradient(180deg,#eef8fb 0%, #d9f2f5 40%, #eef8fb 100%);
+    color:var(--texto);
+    min-height:100vh;
+  }
+  .hero{
+    position:relative;
+    background: linear-gradient(120deg, var(--azul-profundo), var(--azul-medio) 60%, var(--azul-claro));
+    color:#fff;
+    padding:34px 24px 66px;
+    overflow:hidden;
+    box-shadow: var(--sombra);
+  }
+  .wave{ position:absolute; left:0; right:0; bottom:-1px; width:100%; line-height:0; }
+  .wave svg{display:block; width:100%; height:60px;}
+  .hero-inner{
+    max-width:1200px; margin:0 auto; position:relative; z-index:2;
+    display:flex; align-items:center; gap:22px; flex-wrap:wrap; justify-content:space-between;
+  }
+  .hero-left{ display:flex; align-items:center; gap:18px; }
+  .hero-emoji{ font-size:60px; filter:drop-shadow(0 4px 8px rgba(0,0,0,0.25)); }
+  .hero h1{ margin:0; font-size:clamp(26px,4.5vw,38px); font-weight:800; letter-spacing:0.3px; }
+  .hero p{ margin:8px 0 0; opacity:0.9; font-size:15.5px; }
+  .container{ max-width:1440px; margin:-40px auto 60px; padding:0 24px; position:relative; z-index:3; }
+  .controls{
+    background:var(--blanco); border-radius:18px; box-shadow: var(--sombra);
+    padding:20px 24px; display:flex; flex-wrap:wrap; align-items:center; gap:16px; margin-bottom:24px;
+  }
+  .week-nav{ display:flex; align-items:center; gap:10px; }
+  .week-nav button{
+    width:38px; height:38px; border-radius:10px; border:none; cursor:pointer;
+    background:var(--azul-medio); color:#fff; font-size:16px; font-weight:700;
+    display:flex; align-items:center; justify-content:center; transition:.15s;
+  }
+  .week-nav button:hover{ background:var(--azul-profundo); }
+  .week-nav button:disabled{ background:#c8dde3; cursor:not-allowed; }
+  input#weekPicker{
+    padding:10px 14px; border-radius:12px; border:2px solid var(--aqua);
+    font-size:15px; font-weight:600; color:var(--azul-profundo); background:var(--aqua-pastel);
+    cursor:pointer;
+  }
+  .controls .label-mini{ font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--azul-medio); font-weight:700; margin-right:4px;}
+  .no-data-flag{
+    font-size:13px; color:#b3541e; background:#fdeee0; padding:6px 12px; border-radius:999px; font-weight:700;
+    display:none;
+  }
+  .add-week-btn{
+    margin-left:auto; padding:9px 16px; border-radius:10px; border:2px dashed var(--azul-claro);
+    background:#fff; color:var(--azul-medio); font-weight:700; font-size:13px; cursor:pointer;
+  }
+  .add-week-btn:hover{ background:var(--aqua-pastel); }
+  .add-week-panel{
+    display:none; background:var(--blanco); border-radius:14px; box-shadow:var(--sombra);
+    padding:14px 18px; margin:-12px 0 20px; align-items:center; gap:12px; flex-wrap:wrap;
+  }
+  .add-week-panel.open{ display:flex; }
+  .add-week-confirm{
+    padding:9px 14px; border-radius:9px; border:none; background:var(--azul-profundo); color:#fff;
+    font-weight:700; font-size:13px; cursor:pointer;
+  }
+  .add-week-confirm:hover{ background:var(--azul-medio); }
+  .add-week-msg{ font-size:12.5px; font-weight:600; }
+  .add-week-msg.ok{ color:#1f7a3d; }
+  .add-week-msg.err{ color:#b3541e; }
+  .status-flag{
+    font-size:13px; padding:6px 12px; border-radius:999px; font-weight:700; display:none;
+  }
+  .status-flag.current{ color:#1f7a3d; background:#e6f4ea; }
+  .status-flag.past{ color:#5b7f8d; background:#eef4f6; }
+  .status-flag.future{ color:#1f7a3d; background:#e6f4ea; }
+  select.driver-select:disabled, select.time-input:disabled{ background:#f2f5f6; color:#9db2ba; cursor:not-allowed; }
+  .tag-chip.locked{ cursor:not-allowed; opacity:0.65; }
+  .tag-chip.locked:hover{ border-color:transparent; }
+  .week-title{ display:flex; align-items:center; gap:10px; margin: 6px 4px 18px; color:var(--azul-profundo); }
+  .week-title .badge{
+    background:var(--amarillo); color:#5c3d00; font-weight:700; font-size:12px;
+    padding:5px 12px; border-radius:999px; text-transform:uppercase; letter-spacing:.05em;
+  }
+  .week-title h2{margin:0; font-size:19px; font-weight:800;}
+  .grid-scroll{ overflow:visible; }
+  .grid{
+    display:grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap:14px;
+  }
+  .day-card{
+    background:var(--blanco);
+    border-radius:18px;
+    box-shadow: var(--sombra);
+    overflow:hidden;
+    display:flex; flex-direction:column;
+    min-width:0;
+  }
+  @media (max-width:1000px){
+    .grid{ grid-template-columns: repeat(3, 1fr); }
+  }
+  @media (max-width:640px){
+    .grid{ grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width:420px){
+    .grid{ grid-template-columns: 1fr; }
+  }
+  .day-head{
+    background: linear-gradient(120deg, var(--azul-medio), var(--azul-claro));
+    color:#fff; padding:12px 14px; display:flex; justify-content:center; align-items:center; gap:8px; text-align:center;
+  }
+  .day-head .day-name{font-weight:800; font-size:15px;}
+  .day-head .loc-icon{font-size:18px;}
+  .day-body{padding:14px; display:flex; flex-direction:column; gap:12px; flex:1;}
+  .loc-row{ display:flex; align-items:center; gap:8px; font-weight:700; font-size:14px; color:var(--azul-profundo); }
+  .loc-pill{
+    display:inline-flex; align-items:center; gap:6px; padding:4px 9px; border-radius:8px;
+    font-size:11px; font-weight:700; background:var(--aqua-pastel); color:var(--azul-medio);
+  }
+  .loc-pill.brains{ background:#e6f4ea; color:#1f7a3d;}
+  .loc-pill.ciudad{ background:#fdeee0; color:#c1610a;}
+  .loc-pill.sanfer{ background:#eee4fb; color:#6a30c9;}
+  .info-row{ display:flex; align-items:center; gap:7px; font-size:13px; color:#3a5866;}
+  .info-row b{color:var(--texto);}
+  .icon{width:18px; text-align:center;}
+  .field-label{font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:#7c99a3; font-weight:700; margin-bottom:4px;}
+  .field-label.driver-label{font-size:8.5px;}
+  select.driver-select, select.time-input{
+    width:100%; padding:8px 8px; border-radius:9px; border:1.5px solid #d5e6ea;
+    font-size:12px; font-weight:600; color:var(--azul-profundo); background:#fbfdfe; cursor:pointer;
+  }
+  select.driver-select:focus, select.time-input:focus{ outline:2px solid var(--azul-claro); }
+  .drivers-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .time-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .deportistas-wrap{margin-top:auto; padding-top:8px; border-top:1px dashed #dfeef2;}
+  .deportistas-label{font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:#7c99a3; margin-bottom:6px; font-weight:700;}
+  .tag-list{display:grid; grid-template-columns:repeat(3, 1fr); gap:4px;}
+  .tag-chip{
+    background:var(--aqua-pastel); color:var(--azul-medio); font-size:9.5px; font-weight:700;
+    padding:5px 4px; border-radius:999px; cursor:pointer; border:1.5px solid transparent; user-select:none;
+    transition:.15s; white-space:nowrap; text-align:center; overflow:hidden; text-overflow:ellipsis;
+  }
+  .tag-chip:hover{ border-color:var(--azul-claro); }
+  .tag-chip.selected{ background:var(--coral); color:#fff; }
+  .empty-msg{
+    text-align:center; padding:50px 20px; color:#6a8a96; font-size:15px;
+    background:var(--blanco); border-radius:16px; box-shadow:var(--sombra);
+  }
+  .save-row{ display:flex; align-items:center; justify-content:center; gap:12px; margin-top:22px; }
+  .save-btn{
+    padding:12px 26px; border-radius:12px; border:none; background:var(--azul-profundo); color:#fff;
+    font-weight:700; font-size:14.5px; cursor:pointer; box-shadow:var(--sombra);
+  }
+  .save-btn:hover{ background:var(--azul-medio); }
+  .save-msg{ font-size:13px; font-weight:700; color:#1f7a3d; opacity:0; transition:opacity .2s; }
+  .save-msg.show{ opacity:1; }
+  .day-card.future-dim{ filter:grayscale(0.85); opacity:0.82; }
+  .day-card.future-dim .day-head{ background: linear-gradient(120deg, #8a9aa1, #b6c3c8); }
+  .day-card.current-week{ border:2px solid #2fa860; }
+  .day-card.current-week .day-head{ background: linear-gradient(120deg, #1f7a3d, #3fae6a); }
+  @media (max-width:640px){
+    .hero{padding:26px 16px 54px;}
+    .container{margin-top:-30px;}
+    .drivers-grid{ grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-inner">
+    <div class="hero-left">
+      <div class="hero-emoji">🤽‍♂️</div>
+      <div>
+        <h1>Trayectos del Equipo de Waterpolo</h1>
+        <p>Calendario de desplazamientos a entrenamientos · asigna conductores y deportistas por día</p>
+      </div>
+    </div>
+  </div>
+  <div class="wave">
+    <svg viewBox="0 0 1200 60" preserveAspectRatio="none">
+      <path d="M0,30 C150,60 350,0 600,30 C850,60 1050,0 1200,30 L1200,60 L0,60 Z" fill="#eef8fb"></path>
+    </svg>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="controls">
+    <span class="label-mini">📅 Semana</span>
+    <div class="week-nav">
+      <button id="prevWeek" title="Semana anterior">‹</button>
+      <input type="week" id="weekPicker">
+      <button id="nextWeek" title="Semana siguiente">›</button>
+    </div>
+    <span class="no-data-flag" id="noDataFlag">Sin trayectos registrados para esta semana</span>
+    <span class="status-flag" id="statusFlag"></span>
+    <button id="toggleAddWeek" class="add-week-btn">➕ Añadir semana futura</button>
+  </div>
+
+  <div class="add-week-panel" id="addWeekPanel">
+    <span class="label-mini">Nueva semana:</span>
+    <input type="week" id="newWeekPicker">
+    <button id="createWeekBtn" class="add-week-confirm">Crear trayectos para esa semana</button>
+    <span id="addWeekMsg" class="add-week-msg"></span>
+  </div>
+
+  <div class="week-title">
+    <span class="badge">Semana</span>
+    <h2 id="weekLabel"></h2>
+  </div>
+
+  <div class="grid-scroll">
+    <div class="grid" id="daysGrid"></div>
+  </div>
+  <div class="save-row">
+    <button id="saveBtn" class="save-btn">💾 Guardar cambios</button>
+    <span id="saveMsg" class="save-msg"></span>
+  </div>
+
+</div>
+
+<script>
+const WEEKS = [
+  {
+    start: "2026-09-21",
+    label: "Semana del 21 al 25 de Septiembre 2026",
+    days: [
+      { day: "Lunes",     locacionDefault: "Brains",         horaInicioDefault: "19:45", horaFinDefault: "21:15", deportistasDefault: [] },
+      { day: "Martes",    locacionDefault: "Ciudad Escolar", horaInicioDefault: "19:45", horaFinDefault: "21:15", deportistasDefault: ["Jorge"] },
+      { day: "Miércoles", locacionDefault: "Brains",         horaInicioDefault: "19:45", horaFinDefault: "21:15", deportistasDefault: [] },
+      { day: "Jueves",    locacionDefault: "Ciudad Escolar", horaInicioDefault: "19:45", horaFinDefault: "21:15", deportistasDefault: [] },
+      { day: "Viernes",   locacionDefault: "Brains",         horaInicioDefault: "19:45", horaFinDefault: "21:15", deportistasDefault: [] }
+    ]
+  }
+];
+
+const CONDUCTORES = ["Sonia","María José","José Luis","Mónica","Norberto","Valentin","Luis","Andrea","Alberto","Matthias","Silvia"];
+const UBICACIONES = ["Brains","Ciudad Escolar","San Fernando"];
+const DEPORTISTAS = ["Dani","Jorge","Alvaro","Javi","Anibal","Santi"];
+
+const STORAGE_KEY = "wp_planner_assignments_v1";
+const EXTRA_WEEKS_KEY = "wp_extra_weeks_v1";
+const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+const DIAS_TEMPLATE = ["Lunes","Martes","Miércoles","Jueves","Viernes"];
+
+function buildDefaultDays(){
+  const patron = {
+    "Lunes": "Brains", "Martes": "Ciudad Escolar", "Miércoles": "Brains",
+    "Jueves": "Ciudad Escolar", "Viernes": "Brains"
+  };
+  return DIAS_TEMPLATE.map(day => ({
+    day, locacionDefault: patron[day], horaInicioDefault: "19:45", horaFinDefault: "21:15", deportistasDefault: []
+  }));
+}
+
+function formatWeekLabel(mondayDate){
+  const friday = new Date(mondayDate);
+  friday.setDate(mondayDate.getDate() + 4);
+  if(mondayDate.getMonth() === friday.getMonth()){
+    return `Semana del ${mondayDate.getDate()} al ${friday.getDate()} de ${MESES[mondayDate.getMonth()]} ${friday.getFullYear()}`;
+  }
+  return `Semana del ${mondayDate.getDate()} de ${MESES[mondayDate.getMonth()]} al ${friday.getDate()} de ${MESES[friday.getMonth()]} de ${friday.getFullYear()}`;
+}
+
+function isoWeekValueToMonday(isoValue){
+  const [yr, wk] = isoValue.split("-W").map(Number);
+  const simple = new Date(Date.UTC(yr, 0, 1 + (wk-1)*7));
+  const dow = simple.getUTCDay();
+  const monday = new Date(simple);
+  if(dow <= 4) monday.setUTCDate(simple.getUTCDate() - dow + 1);
+  else monday.setUTCDate(simple.getUTCDate() + 8 - dow);
+  return new Date(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate());
+}
+
+function loadExtraWeeks(){
+  try{ return JSON.parse(localStorage.getItem(EXTRA_WEEKS_KEY)) || []; }catch(e){ return []; }
+}
+function saveExtraWeeks(list){
+  localStorage.setItem(EXTRA_WEEKS_KEY, JSON.stringify(list));
+}
+
+function locClass(loc){
+  if(loc === "Brains") return "brains";
+  if(loc === "Ciudad Escolar") return "ciudad";
+  if(loc === "San Fernando") return "sanfer";
+  return "";
+}
+
+function dateToISOWeekValue(d){
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = (date.getUTCDay() + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - dayNum + 3);
+  const firstThursday = new Date(Date.UTC(date.getUTCFullYear(), 0, 4));
+  const week = 1 + Math.round(((date - firstThursday) / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
+  return `${date.getUTCFullYear()}-W${String(week).padStart(2,"0")}`;
+}
+function parseISODate(s){ const [y,m,d] = s.split("-").map(Number); return new Date(y, m-1, d); }
+
+function loadAssignments(){
+  try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }catch(e){ return {}; }
+}
+function saveAssignments(data){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+let assignments = loadAssignments();
+
+function keyFor(weekLabel, day){ return weekLabel + "::" + day; }
+
+function getAssignment(weekLabel, dayObj){
+  const k = keyFor(weekLabel, dayObj.day);
+  if(!assignments[k]){
+    assignments[k] = {
+      locacion: dayObj.locacionDefault,
+      horaInicio: dayObj.horaInicioDefault,
+      horaFin: dayObj.horaFinDefault,
+      conductorIda:"", conductorVuelta:"",
+      deportistas: [...dayObj.deportistasDefault]
+    };
+  }
+  if(assignments[k].locacion === undefined){ assignments[k].locacion = dayObj.locacionDefault; }
+  if(assignments[k].horaInicio === undefined){ assignments[k].horaInicio = dayObj.horaInicioDefault; }
+  if(assignments[k].horaFin === undefined){ assignments[k].horaFin = dayObj.horaFinDefault; }
+  return assignments[k];
+}
+function setAssignment(weekLabel, day, patch){
+  const k = keyFor(weekLabel, day);
+  assignments[k] = { ...assignments[k], ...patch };
+  saveAssignments(assignments);
+}
+
+let currentWeekIndex = -1;
+
+function findWeekIndexByISO(isoValue){
+  return WEEKS.findIndex(w => dateToISOWeekValue(parseISODate(w.start)) === isoValue);
+}
+
+function driverOptionsHtml(selected){
+  return `<option value="">Sin asignar</option>` +
+    CONDUCTORES.map(c => `<option value="${c}" ${c===selected ? "selected":""}>${c}</option>`).join("");
+}
+
+function ubicacionOptionsHtml(selected){
+  return UBICACIONES.map(u => `<option value="${u}" ${u===selected ? "selected":""}>${u}</option>`).join("");
+}
+
+const TIME_SLOTS = (() => {
+  const slots = [];
+  for(let h = 0; h < 24; h++){
+    for(let m of [0,15,30,45]){
+      slots.push(String(h).padStart(2,"0") + ":" + String(m).padStart(2,"0"));
+    }
+  }
+  return slots;
+})();
+
+function timeOptionsHtml(selected){
+  return TIME_SLOTS.map(t => `<option value="${t}" ${t===selected ? "selected":""}>${t}</option>`).join("");
+}
+
+function getWeekStatus(startDateStr){
+  const todayISO = dateToISOWeekValue(new Date());
+  const weekISO = dateToISOWeekValue(parseISODate(startDateStr));
+  if(weekISO === todayISO) return "current";
+  return weekISO < todayISO ? "past" : "future";
+}
+
+function renderDays(){
+  const grid = document.getElementById("daysGrid");
+  const flag = document.getElementById("noDataFlag");
+  const statusFlag = document.getElementById("statusFlag");
+  grid.innerHTML = "";
+
+  if(currentWeekIndex === -1){
+    document.getElementById("weekLabel").textContent = "Sin datos para la semana seleccionada";
+    flag.style.display = "inline-block";
+    statusFlag.style.display = "none";
+    grid.innerHTML = `<div class="empty-msg">No hay trayectos registrados para esta semana. Usa las flechas o el selector para ir a una semana con datos.</div>`;
+    return;
+  }
+  flag.style.display = "none";
+  const week = WEEKS[currentWeekIndex];
+  document.getElementById("weekLabel").textContent = week.label;
+
+  const status = getWeekStatus(week.start);
+  const editable = status !== "past";
+  statusFlag.className = "status-flag " + status;
+  statusFlag.style.display = "inline-block";
+  statusFlag.textContent = status === "current"
+    ? "✅ Semana actual — editable"
+    : status === "past"
+      ? "🔒 Semana pasada — solo consulta"
+      : "✅ Semana futura — editable";
+
+  week.days.forEach(d=>{
+    const a = getAssignment(week.label, d);
+
+    const card = document.createElement("div");
+    card.className = "day-card" + (status === "future" ? " future-dim" : status === "current" ? " current-week" : "");
+
+    const tagsHtml = DEPORTISTAS.map(name => {
+      const isSel = a.deportistas.includes(name);
+      return `<span class="tag-chip ${isSel ? "selected":""} ${editable ? "" : "locked"}" data-day="${d.day}" data-name="${name}">${name}</span>`;
+    }).join("");
+
+    card.innerHTML = `
+      <div class="day-head">
+        <span class="day-name">${d.day}</span>
+        <span class="loc-icon">🚕</span>
+      </div>
+      <div class="day-body">
+        <div>
+          <div class="field-label">📍 Ubicación</div>
+          <select class="driver-select loc-select" data-day="${d.day}" ${editable ? "" : "disabled"}>
+            ${ubicacionOptionsHtml(a.locacion)}
+          </select>
+        </div>
+        <div class="time-grid">
+          <div>
+            <div class="field-label">⏰ Hora inicio</div>
+            <select class="time-input" data-day="${d.day}" data-role="horaInicio" ${editable ? "" : "disabled"}>
+              ${timeOptionsHtml(a.horaInicio)}
+            </select>
+          </div>
+          <div>
+            <div class="field-label">⏰ Hora fin</div>
+            <select class="time-input" data-day="${d.day}" data-role="horaFin" ${editable ? "" : "disabled"}>
+              ${timeOptionsHtml(a.horaFin)}
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <div class="field-label driver-label">🚗 Conductores (ida / vuelta)</div>
+          <div class="drivers-grid">
+            <select class="driver-select" data-day="${d.day}" data-role="conductorIda" ${editable ? "" : "disabled"}>
+              ${driverOptionsHtml(a.conductorIda)}
+            </select>
+            <select class="driver-select" data-day="${d.day}" data-role="conductorVuelta" ${editable ? "" : "disabled"}>
+              ${driverOptionsHtml(a.conductorVuelta)}
+            </select>
+          </div>
+        </div>
+
+        <div class="deportistas-wrap">
+          <div class="deportistas-label">Deportistas (selección múltiple)</div>
+          <div class="tag-list">${tagsHtml}</div>
+        </div>
+      </div>
+    `;
+    grid.appendChild(card);
+  });
+
+  if(editable){
+    grid.querySelectorAll("select.driver-select[data-role]").forEach(sel=>{
+      sel.addEventListener("change", (e)=>{
+        const day = e.target.dataset.day;
+        const role = e.target.dataset.role;
+        setAssignment(week.label, day, { [role]: e.target.value });
+      });
+    });
+    grid.querySelectorAll("select.time-input").forEach(inp=>{
+      inp.addEventListener("change", (e)=>{
+        const day = e.target.dataset.day;
+        const role = e.target.dataset.role;
+        setAssignment(week.label, day, { [role]: e.target.value });
+      });
+    });
+    grid.querySelectorAll("select.loc-select").forEach(sel=>{
+      sel.addEventListener("change", (e)=>{
+        const day = e.target.dataset.day;
+        setAssignment(week.label, day, { locacion: e.target.value });
+        renderDays();
+      });
+    });
+    grid.querySelectorAll(".tag-chip").forEach(chip=>{
+      chip.addEventListener("click", ()=>{
+        const day = chip.dataset.day;
+        const name = chip.dataset.name;
+        const a2 = getAssignment(week.label, week.days.find(x=>x.day===day));
+        let list = a2.deportistas.slice();
+        if(list.includes(name)) list = list.filter(n=>n!==name);
+        else list.push(name);
+        setAssignment(week.label, day, { deportistas: list });
+        renderDays();
+      });
+    });
+  }
+}
+
+function goToWeek(isoValue){
+  document.getElementById("weekPicker").value = isoValue;
+  currentWeekIndex = findWeekIndexByISO(isoValue);
+  renderDays();
+  updateNavButtons(isoValue);
+}
+
+function shiftWeeks(isoValue, delta){
+  const [yr, wk] = isoValue.split("-W").map(Number);
+  const simple = new Date(Date.UTC(yr, 0, 1 + (wk-1)*7));
+  const dow = simple.getUTCDay();
+  const isoStart = new Date(simple);
+  if(dow <= 4) isoStart.setUTCDate(simple.getUTCDate() - dow + 1);
+  else isoStart.setUTCDate(simple.getUTCDate() + 8 - dow);
+  isoStart.setUTCDate(isoStart.getUTCDate() + delta*7);
+  return dateToISOWeekValue(isoStart);
+}
+
+function updateNavButtons(){
+  document.getElementById("prevWeek").disabled = false;
+  document.getElementById("nextWeek").disabled = false;
+}
+
+document.getElementById("saveBtn").addEventListener("click", ()=>{
+  saveAssignments(assignments);
+  const msg = document.getElementById("saveMsg");
+  msg.textContent = "✅ Cambios guardados";
+  msg.classList.add("show");
+  clearTimeout(window._saveMsgTimeout);
+  window._saveMsgTimeout = setTimeout(()=> msg.classList.remove("show"), 2200);
+});
+
+document.getElementById("prevWeek").addEventListener("click", ()=>{
+  const cur = document.getElementById("weekPicker").value;
+  goToWeek(shiftWeeks(cur, -1));
+});
+document.getElementById("nextWeek").addEventListener("click", ()=>{
+  const cur = document.getElementById("weekPicker").value;
+  goToWeek(shiftWeeks(cur, 1));
+});
+document.getElementById("weekPicker").addEventListener("change", (e)=>{
+  goToWeek(e.target.value);
+});
+
+function loadAllWeeks(){
+  const extra = loadExtraWeeks();
+  extra.forEach(w => {
+    if(!WEEKS.find(x => x.start === w.start)) WEEKS.push(w);
+  });
+  WEEKS.sort((a,b) => a.start.localeCompare(b.start));
+}
+
+document.getElementById("toggleAddWeek").addEventListener("click", ()=>{
+  document.getElementById("addWeekPanel").classList.toggle("open");
+});
+
+document.getElementById("createWeekBtn").addEventListener("click", ()=>{
+  const msg = document.getElementById("addWeekMsg");
+  const isoValue = document.getElementById("newWeekPicker").value;
+  if(!isoValue){
+    msg.textContent = "Elige primero una semana.";
+    msg.className = "add-week-msg err";
+    return;
+  }
+  const monday = isoWeekValueToMonday(isoValue);
+  const status = getWeekStatus(monday.getFullYear() + "-" + String(monday.getMonth()+1).padStart(2,"0") + "-" + String(monday.getDate()).padStart(2,"0"));
+  if(status === "past"){
+    msg.textContent = "No se pueden crear trayectos para una semana pasada.";
+    msg.className = "add-week-msg err";
+    return;
+  }
+  const startStr = monday.getFullYear() + "-" + String(monday.getMonth()+1).padStart(2,"0") + "-" + String(monday.getDate()).padStart(2,"0");
+  if(WEEKS.find(w => w.start === startStr)){
+    msg.textContent = "Esa semana ya existe. Navegando a ella.";
+    msg.className = "add-week-msg ok";
+    goToWeek(isoValue);
+    return;
+  }
+  const newWeek = { start: startStr, label: formatWeekLabel(monday), days: buildDefaultDays() };
+  WEEKS.push(newWeek);
+  WEEKS.sort((a,b) => a.start.localeCompare(b.start));
+  const extra = loadExtraWeeks();
+  extra.push(newWeek);
+  saveExtraWeeks(extra);
+  msg.textContent = "✅ Semana creada. Ya puedes completar sus trayectos.";
+  msg.className = "add-week-msg ok";
+  goToWeek(isoValue);
+});
+
+function init(){
+  loadAllWeeks();
+  const initialISO = dateToISOWeekValue(parseISODate(WEEKS[0].start));
+  goToWeek(initialISO);
+}
+init();
+</script>
+
+</body>
+</html>
