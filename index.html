@@ -93,6 +93,8 @@ font-size:13px; padding:6px 12px; border-radius:999px; font-weight:700; display:
 select.driver-select:disabled, select.time-input:disabled{ background:#f2f5f6; color:#9db2ba; cursor:not-allowed; }
 .tag-chip.locked{ cursor:not-allowed; opacity:0.65; }
 .tag-chip.locked:hover{ border-color:transparent; }
+.tag-chip.used-elsewhere{ cursor:not-allowed; opacity:0.4; background:#eef2f3; color:#9db2ba; }
+.tag-chip.used-elsewhere:hover{ border-color:transparent; }
 .week-title{ display:flex; align-items:center; gap:10px; margin: 6px 4px 18px; color:var(--azul-profundo); }
 .week-title .badge{
 background:var(--amarillo); color:#5c3d00; font-weight:700; font-size:12px;
@@ -175,6 +177,19 @@ font-weight:700; font-size:14.5px; cursor:pointer; box-shadow:var(--sombra);
 .day-card.future-dim .day-head{ background: linear-gradient(120deg, #8a9aa1, #b6c3c8); }
 .day-card.current-week{ border:2px solid #2fa860; }
 .day-card.current-week .day-head{ background: linear-gradient(120deg, #1f7a3d, #3fae6a); }
+.trayecto-block{ display:flex; flex-direction:column; gap:12px; }
+.trayecto-block + .trayecto-block{ border-top:2px dashed var(--aqua); margin-top:2px; padding-top:12px; }
+.trayecto-header{ display:flex; align-items:center; justify-content:space-between; font-size:11.5px; font-weight:800; color:var(--azul-medio); text-transform:uppercase; letter-spacing:.04em; }
+.remove-trayecto-btn{ border:none; background:#fdeee0; color:#b3541e; font-weight:700; font-size:11px; padding:4px 9px; border-radius:8px; cursor:pointer; }
+.remove-trayecto-btn:hover{ background:#f8d9bd; }
+.remove-trayecto-btn:disabled{ opacity:.5; cursor:not-allowed; }
+.add-trayecto-btn{ margin-top:2px; padding:9px 10px; border-radius:10px; border:2px dashed var(--azul-claro); background:#fff; color:var(--azul-medio); font-weight:700; font-size:12px; cursor:pointer; }
+.add-trayecto-btn:hover{ background:var(--aqua-pastel); }
+.plazas-group{ display:flex; gap:8px; }
+.plazas-btn{ flex:1; padding:8px 6px; border-radius:9px; border:1.5px solid #d5e6ea; background:#fbfdfe; color:var(--azul-profundo); font-weight:700; font-size:11.5px; cursor:pointer; text-align:center; }
+.plazas-btn:hover{ border-color:var(--azul-claro); }
+.plazas-btn.active{ background:var(--amarillo); border-color:var(--amarillo); color:#5c3d00; }
+.plazas-btn:disabled{ background:#f2f5f6; color:#9db2ba; cursor:not-allowed; border-color:#e3edf0; }
 @media (max-width:640px){
 .hero{padding:26px 16px 54px;}
 .container{margin-top:-30px;}
@@ -247,7 +262,7 @@ days: [
 
 const CONDUCTORES = ["Sonia","María José","José Luis","Mónica","Norberto","Valentin","Luis","Andrea","Alberto","Matthias","Silvia"];
 const UBICACIONES = ["Brains","Ciudad Escolar","San Fernando"];
-const DEPORTISTAS = ["Dani","Jorge","Alvaro","Javi","Anibal","Santi"];
+const DEPORTISTAS = ["Dani","Jorge","Alvaro","Javi","Anibal","Santi","Marco"];
 
 // ============ GOOGLE SHEETS (vía Google Apps Script) ============
 // 1) Crea una Google Sheet, ve a Extensiones -> Apps Script.
@@ -358,27 +373,68 @@ window._syncFlagTimeout = setTimeout(()=> el.style.display = "none", 1800);
 
 function keyFor(weekLabel, day){ return weekLabel + "::" + day; }
 
-function getAssignment(weekLabel, dayObj){
-const k = keyFor(weekLabel, dayObj.day);
-if(!assignments[k]){
-assignments[k] = {
+// Cada día puede tener hasta 2 "trayectos" (dos desplazamientos independientes
+// el mismo día, cada uno con su ubicación, horarios, conductores, deportistas
+// y si el vehículo usado es de 5 o de 7 plazas).
+function blankTrayecto(dayObj){
+return {
 locacion: dayObj.locacionDefault,
 horaInicio: dayObj.horaInicioDefault,
 horaFin: dayObj.horaFinDefault,
 conductorIda:"", conductorVuelta:"",
-deportistas: [...dayObj.deportistasDefault]
+deportistas: [...dayObj.deportistasDefault],
+plazas:"5"
 };
 }
-if(assignments[k].locacion === undefined){ assignments[k].locacion = dayObj.locacionDefault; }
-if(assignments[k].horaInicio === undefined){ assignments[k].horaInicio = dayObj.horaInicioDefault; }
-if(assignments[k].horaFin === undefined){ assignments[k].horaFin = dayObj.horaFinDefault; }
+
+function getAssignment(weekLabel, dayObj){
+const k = keyFor(weekLabel, dayObj.day);
+if(!assignments[k] || !assignments[k].trayectos){
+const old = assignments[k]; // formato antiguo (plano, un solo trayecto)
+const base = blankTrayecto(dayObj);
+assignments[k] = { trayectos: [ old ? { ...base, ...old } : base ] };
+}
+// Rellenar valores por defecto que pudieran faltar (datos antiguos o incompletos)
+assignments[k].trayectos.forEach((t, i)=>{
+if(t.locacion === undefined) t.locacion = i===0 ? dayObj.locacionDefault : dayObj.locacionDefault;
+if(t.horaInicio === undefined) t.horaInicio = dayObj.horaInicioDefault;
+if(t.horaFin === undefined) t.horaFin = dayObj.horaFinDefault;
+if(t.conductorIda === undefined) t.conductorIda = "";
+if(t.conductorVuelta === undefined) t.conductorVuelta = "";
+if(!t.deportistas) t.deportistas = [];
+if(t.plazas === undefined){
+// Migración de datos antiguos que usaban el booleano "plazas7"
+t.plazas = t.plazas7 ? "7" : "5";
+}
+delete t.plazas7;
+});
 return assignments[k];
 }
 
-function setAssignment(weekLabel, day, patch){
+function setAssignment(weekLabel, day, idx, patch){
 const k = keyFor(weekLabel, day);
-assignments[k] = { ...assignments[k], ...patch };
+if(!assignments[k] || !assignments[k].trayectos) assignments[k] = { trayectos: [] };
+if(!assignments[k].trayectos[idx]) assignments[k].trayectos[idx] = {};
+assignments[k].trayectos[idx] = { ...assignments[k].trayectos[idx], ...patch };
 saveAssignments(assignments);
+}
+
+function addTrayecto(weekLabel, day, dayObj){
+const k = keyFor(weekLabel, day);
+const a = getAssignment(weekLabel, dayObj);
+if(a.trayectos.length >= 2) return;
+a.trayectos.push(blankTrayecto(dayObj));
+saveAssignments(assignments);
+renderDays();
+}
+
+function removeTrayecto(weekLabel, day, idx){
+const k = keyFor(weekLabel, day);
+if(!assignments[k] || !assignments[k].trayectos) return;
+if(assignments[k].trayectos.length <= 1) return;
+assignments[k].trayectos.splice(idx, 1);
+saveAssignments(assignments);
+renderDays();
 }
 
 let currentWeekIndex = -1;
@@ -411,10 +467,21 @@ return TIME_SLOTS.map(t => `<option value="${t}" ${t===selected ? "selected":""}
 }
 
 function getWeekStatus(startDateStr){
-const todayISO = dateToISOWeekValue(new Date());
-const weekISO = dateToISOWeekValue(parseISODate(startDateStr));
-if(weekISO === todayISO) return "current";
-return weekISO < todayISO ? "past" : "future";
+// La semana se considera "activa" (editable, no futura) ya desde el día
+// anterior a su lunes de inicio, y sigue activa hasta el domingo de esa
+// misma semana. A partir del lunes siguiente pasa a "pasada".
+const monday = parseISODate(startDateStr);
+const activation = new Date(monday);
+activation.setDate(monday.getDate() - 1); // día anterior al inicio
+activation.setHours(0,0,0,0);
+const weekEnd = new Date(monday);
+weekEnd.setDate(monday.getDate() + 6); // domingo de esa semana
+weekEnd.setHours(0,0,0,0);
+const today = new Date();
+today.setHours(0,0,0,0);
+if(today < activation) return "future";
+if(today > weekEnd) return "past";
+return "current";
 }
 
 function renderDays(){
@@ -447,9 +514,65 @@ const a = getAssignment(week.label, d);
 const card = document.createElement("div");
 card.className = "day-card" + (status === "future" ? " future-dim" : status === "current" ? " current-week" : "");
 
+const trayectosHtml = a.trayectos.map((t, idx)=>{
 const tagsHtml = DEPORTISTAS.map(name => {
-const isSel = a.deportistas.includes(name);
-return `<span class="tag-chip ${isSel ? "selected":""} ${editable ? "" : "locked"}" data-day="${d.day}" data-name="${name}">${name}</span>`;
+const isSel = t.deportistas.includes(name);
+const usedElsewhere = !isSel && a.trayectos.some((t2, i2)=> i2 !== idx && t2.deportistas.includes(name));
+const chipTitle = usedElsewhere ? ` title="Ya va en el otro trayecto de este día"` : "";
+return `<span class="tag-chip ${isSel ? "selected":""} ${editable ? "" : "locked"} ${usedElsewhere ? "used-elsewhere" : ""}" data-day="${d.day}" data-idx="${idx}" data-name="${name}"${chipTitle}>${name}</span>`;
+}).join("");
+
+return `
+<div class="trayecto-block" data-day="${d.day}" data-idx="${idx}">
+${idx > 0 ? `
+<div class="trayecto-header">
+<span>🔁 2º trayecto del día</span>
+<button class="remove-trayecto-btn" data-day="${d.day}" data-idx="${idx}" ${editable ? "" : "disabled"}>✕ Quitar</button>
+</div>` : ""}
+<div>
+<div class="field-label">📍 Ubicación</div>
+<select class="driver-select loc-select" data-day="${d.day}" data-idx="${idx}" ${editable ? "" : "disabled"}>
+${ubicacionOptionsHtml(t.locacion)}
+</select>
+</div>
+<div class="time-grid">
+<div>
+<div class="field-label">⏰ Hora inicio</div>
+<select class="time-input" data-day="${d.day}" data-idx="${idx}" data-role="horaInicio" ${editable ? "" : "disabled"}>
+${timeOptionsHtml(t.horaInicio)}
+</select>
+</div>
+<div>
+<div class="field-label">⏰ Hora fin</div>
+<select class="time-input" data-day="${d.day}" data-idx="${idx}" data-role="horaFin" ${editable ? "" : "disabled"}>
+${timeOptionsHtml(t.horaFin)}
+</select>
+</div>
+</div>
+<div>
+<div class="field-label driver-label">🚗 Conductores (ida / vuelta)</div>
+<div class="drivers-grid">
+<select class="driver-select" data-day="${d.day}" data-idx="${idx}" data-role="conductorIda" ${editable ? "" : "disabled"}>
+${driverOptionsHtml(t.conductorIda)}
+</select>
+<select class="driver-select" data-day="${d.day}" data-idx="${idx}" data-role="conductorVuelta" ${editable ? "" : "disabled"}>
+${driverOptionsHtml(t.conductorVuelta)}
+</select>
+</div>
+</div>
+<div>
+<div class="field-label">🚐 Vehículo</div>
+<div class="plazas-group">
+<button class="plazas-btn ${t.plazas === "5" ? "active" : ""}" data-day="${d.day}" data-idx="${idx}" data-plazas="5" ${editable ? "" : "disabled"}>5 plazas</button>
+<button class="plazas-btn ${t.plazas === "7" ? "active" : ""}" data-day="${d.day}" data-idx="${idx}" data-plazas="7" ${editable ? "" : "disabled"}>7 plazas</button>
+</div>
+</div>
+<div class="deportistas-wrap">
+<div class="deportistas-label">Deportistas (selección múltiple)</div>
+<div class="tag-list">${tagsHtml}</div>
+</div>
+</div>
+`;
 }).join("");
 
 card.innerHTML = `
@@ -458,41 +581,8 @@ card.innerHTML = `
 <span class="loc-icon">🚕</span>
 </div>
 <div class="day-body">
-<div>
-<div class="field-label">📍 Ubicación</div>
-<select class="driver-select loc-select" data-day="${d.day}" ${editable ? "" : "disabled"}>
-${ubicacionOptionsHtml(a.locacion)}
-</select>
-</div>
-<div class="time-grid">
-<div>
-<div class="field-label">⏰ Hora inicio</div>
-<select class="time-input" data-day="${d.day}" data-role="horaInicio" ${editable ? "" : "disabled"}>
-${timeOptionsHtml(a.horaInicio)}
-</select>
-</div>
-<div>
-<div class="field-label">⏰ Hora fin</div>
-<select class="time-input" data-day="${d.day}" data-role="horaFin" ${editable ? "" : "disabled"}>
-${timeOptionsHtml(a.horaFin)}
-</select>
-</div>
-</div>
-<div>
-<div class="field-label driver-label">🚗 Conductores (ida / vuelta)</div>
-<div class="drivers-grid">
-<select class="driver-select" data-day="${d.day}" data-role="conductorIda" ${editable ? "" : "disabled"}>
-${driverOptionsHtml(a.conductorIda)}
-</select>
-<select class="driver-select" data-day="${d.day}" data-role="conductorVuelta" ${editable ? "" : "disabled"}>
-${driverOptionsHtml(a.conductorVuelta)}
-</select>
-</div>
-</div>
-<div class="deportistas-wrap">
-<div class="deportistas-label">Deportistas (selección múltiple)</div>
-<div class="tag-list">${tagsHtml}</div>
-</div>
+${trayectosHtml}
+${editable && a.trayectos.length < 2 ? `<button class="add-trayecto-btn" data-day="${d.day}">➕ Añadir 2º trayecto</button>` : ""}
 </div>
 `;
 grid.appendChild(card);
@@ -502,34 +592,61 @@ if(editable){
 grid.querySelectorAll("select.driver-select[data-role]").forEach(sel=>{
 sel.addEventListener("change", (e)=>{
 const day = e.target.dataset.day;
+const idx = Number(e.target.dataset.idx);
 const role = e.target.dataset.role;
-setAssignment(week.label, day, { [role]: e.target.value });
+setAssignment(week.label, day, idx, { [role]: e.target.value });
 });
 });
 grid.querySelectorAll("select.time-input").forEach(inp=>{
 inp.addEventListener("change", (e)=>{
 const day = e.target.dataset.day;
+const idx = Number(e.target.dataset.idx);
 const role = e.target.dataset.role;
-setAssignment(week.label, day, { [role]: e.target.value });
+setAssignment(week.label, day, idx, { [role]: e.target.value });
 });
 });
 grid.querySelectorAll("select.loc-select").forEach(sel=>{
 sel.addEventListener("change", (e)=>{
 const day = e.target.dataset.day;
-setAssignment(week.label, day, { locacion: e.target.value });
+const idx = Number(e.target.dataset.idx);
+setAssignment(week.label, day, idx, { locacion: e.target.value });
 renderDays();
 });
 });
 grid.querySelectorAll(".tag-chip").forEach(chip=>{
 chip.addEventListener("click", ()=>{
+if(chip.classList.contains("used-elsewhere")) return;
 const day = chip.dataset.day;
+const idx = Number(chip.dataset.idx);
 const name = chip.dataset.name;
 const a2 = getAssignment(week.label, week.days.find(x=>x.day===day));
-let list = a2.deportistas.slice();
+let list = a2.trayectos[idx].deportistas.slice();
 if(list.includes(name)) list = list.filter(n=>n!==name);
 else list.push(name);
-setAssignment(week.label, day, { deportistas: list });
+setAssignment(week.label, day, idx, { deportistas: list });
 renderDays();
+});
+});
+grid.querySelectorAll(".plazas-btn").forEach(btn=>{
+btn.addEventListener("click", ()=>{
+const day = btn.dataset.day;
+const idx = Number(btn.dataset.idx);
+setAssignment(week.label, day, idx, { plazas: btn.dataset.plazas });
+renderDays();
+});
+});
+grid.querySelectorAll(".add-trayecto-btn").forEach(btn=>{
+btn.addEventListener("click", ()=>{
+const day = btn.dataset.day;
+const dayObj = week.days.find(x=>x.day===day);
+addTrayecto(week.label, day, dayObj);
+});
+});
+grid.querySelectorAll(".remove-trayecto-btn").forEach(btn=>{
+btn.addEventListener("click", ()=>{
+const day = btn.dataset.day;
+const idx = Number(btn.dataset.idx);
+removeTrayecto(week.label, day, idx);
 });
 });
 }
