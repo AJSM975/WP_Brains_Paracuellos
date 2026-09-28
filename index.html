@@ -185,11 +185,13 @@ font-weight:700; font-size:14.5px; cursor:pointer; box-shadow:var(--sombra);
 .remove-trayecto-btn:disabled{ opacity:.5; cursor:not-allowed; }
 .add-trayecto-btn{ margin-top:2px; padding:9px 10px; border-radius:10px; border:2px dashed var(--azul-claro); background:#fff; color:var(--azul-medio); font-weight:700; font-size:12px; cursor:pointer; }
 .add-trayecto-btn:hover{ background:var(--aqua-pastel); }
-.plazas-group{ display:flex; gap:8px; }
-.plazas-btn{ flex:1; padding:8px 6px; border-radius:9px; border:1.5px solid #d5e6ea; background:#fbfdfe; color:var(--azul-profundo); font-weight:700; font-size:11.5px; cursor:pointer; text-align:center; }
-.plazas-btn:hover{ border-color:var(--azul-claro); }
-.plazas-btn.active{ background:var(--amarillo); border-color:var(--amarillo); color:#5c3d00; }
-.plazas-btn:disabled{ background:#f2f5f6; color:#9db2ba; cursor:not-allowed; border-color:#e3edf0; }
+.plazas-label-center{ text-align:center; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:#7c99a3; font-weight:700; margin-top:8px; margin-bottom:2px; }
+select.plazas-select{
+width:100%; padding:6px 8px; border-radius:9px; border:1.5px solid #d5e6ea;
+font-size:11.5px; font-weight:600; color:var(--azul-profundo); background:#fbfdfe; cursor:pointer;
+}
+select.plazas-select:focus{ outline:2px solid var(--azul-claro); }
+select.plazas-select:disabled{ background:#f2f5f6; color:#9db2ba; cursor:not-allowed; }
 @media (max-width:640px){
 .hero{padding:26px 16px 54px;}
 .container{margin-top:-30px;}
@@ -383,7 +385,7 @@ horaInicio: dayObj.horaInicioDefault,
 horaFin: dayObj.horaFinDefault,
 conductorIda:"", conductorVuelta:"",
 deportistas: [...dayObj.deportistasDefault],
-plazas:"5"
+plazasIda:"5", plazasVuelta:"5"
 };
 }
 
@@ -402,10 +404,16 @@ if(t.horaFin === undefined) t.horaFin = dayObj.horaFinDefault;
 if(t.conductorIda === undefined) t.conductorIda = "";
 if(t.conductorVuelta === undefined) t.conductorVuelta = "";
 if(!t.deportistas) t.deportistas = [];
-if(t.plazas === undefined){
-// Migración de datos antiguos que usaban el booleano "plazas7"
-t.plazas = t.plazas7 ? "7" : "5";
+// Migración de datos antiguos: antes había una sola "plazas" por trayecto,
+// o incluso un booleano "plazas7". Ahora cada conductor (ida/vuelta) tiene
+// su propio tipo de vehículo.
+if(t.plazasIda === undefined){
+t.plazasIda = t.plazas || (t.plazas7 ? "7" : "5");
 }
+if(t.plazasVuelta === undefined){
+t.plazasVuelta = t.plazas || (t.plazas7 ? "7" : "5");
+}
+delete t.plazas;
 delete t.plazas7;
 });
 return assignments[k];
@@ -559,12 +567,16 @@ ${driverOptionsHtml(t.conductorIda)}
 ${driverOptionsHtml(t.conductorVuelta)}
 </select>
 </div>
-</div>
-<div>
-<div class="field-label">🚐 Vehículo</div>
-<div class="plazas-group">
-<button class="plazas-btn ${t.plazas === "5" ? "active" : ""}" data-day="${d.day}" data-idx="${idx}" data-plazas="5" ${editable ? "" : "disabled"}>5 plazas</button>
-<button class="plazas-btn ${t.plazas === "7" ? "active" : ""}" data-day="${d.day}" data-idx="${idx}" data-plazas="7" ${editable ? "" : "disabled"}>7 plazas</button>
+<div class="plazas-label-center">💺 Plazas del Vehículo</div>
+<div class="drivers-grid">
+<select class="plazas-select" data-day="${d.day}" data-idx="${idx}" data-role="plazasIda" ${editable ? "" : "disabled"}>
+<option value="5" ${t.plazasIda === "5" ? "selected" : ""}>5</option>
+<option value="7" ${t.plazasIda === "7" ? "selected" : ""}>7</option>
+</select>
+<select class="plazas-select" data-day="${d.day}" data-idx="${idx}" data-role="plazasVuelta" ${editable ? "" : "disabled"}>
+<option value="5" ${t.plazasVuelta === "5" ? "selected" : ""}>5</option>
+<option value="7" ${t.plazasVuelta === "7" ? "selected" : ""}>7</option>
+</select>
 </div>
 </div>
 <div class="deportistas-wrap">
@@ -627,12 +639,12 @@ setAssignment(week.label, day, idx, { deportistas: list });
 renderDays();
 });
 });
-grid.querySelectorAll(".plazas-btn").forEach(btn=>{
-btn.addEventListener("click", ()=>{
-const day = btn.dataset.day;
-const idx = Number(btn.dataset.idx);
-setAssignment(week.label, day, idx, { plazas: btn.dataset.plazas });
-renderDays();
+grid.querySelectorAll("select.plazas-select").forEach(sel=>{
+sel.addEventListener("change", (e)=>{
+const day = e.target.dataset.day;
+const idx = Number(e.target.dataset.idx);
+const role = e.target.dataset.role;
+setAssignment(week.label, day, idx, { [role]: e.target.value });
 });
 });
 grid.querySelectorAll(".add-trayecto-btn").forEach(btn=>{
@@ -763,7 +775,7 @@ if(raw === lastRawSnapshot && !isFirstLoad) return; // nada ha cambiado, no re-r
 lastRawSnapshot = raw;
 applyRemoteData(data);
 if(isFirstLoad){
-const initialISO = dateToISOWeekValue(parseISODate(WEEKS[0].start));
+const initialISO = dateToISOWeekValue(new Date());
 goToWeek(initialISO);
 sheetsReady = true;
 } else {
